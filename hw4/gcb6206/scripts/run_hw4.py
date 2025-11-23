@@ -92,7 +92,11 @@ def run_training_loop(config: dict, logger: Logger, args: argparse.Namespace):
             # (DONE)TO-DO(student): Train the agent using `update` method. `batch` is a dictionary of torch tensors.
             update_info = agent.update(
                 step=step,
-                **batch
+                observations=batch["observations"],
+                actions=batch["actions"],
+                rewards=batch["rewards"],
+                next_observations=batch["next_observations"],
+                dones=batch["dones"]
             )
 
             # logging

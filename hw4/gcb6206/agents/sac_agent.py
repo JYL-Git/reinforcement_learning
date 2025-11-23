@@ -331,33 +331,24 @@ class SoftActorCritic(nn.Module):
 
         return loss, torch.mean(self.entropy(action_distribution))
 
-    def actor_loss_reparametrize(self, obs: torch.Tensor):
-        batch_size = obs.shape[0]
+    def actor_loss_reparametrize(self, obs):
+        #     # Sample from the actor
+        action_distribution = self.actor(obs)
+        action = action_distribution.rsample()
 
-        # Sample from the actor
-        action_distribution: torch.distributions.Distribution = self.actor(obs)
+        #     # (DONE)TO-DO(student): Compute Q-dvalues for the sampled state-action pair
+        q_values = self.critic(obs, action).squeeze(-1)
+        q_values = torch.mean(q_values, dim=0)
 
-        # (DONE)TO-DO(student): Sample actions
-        # Note: Think about whether to use .rsample() or .sample() here...
-        action = action_distribution.rsample() # (batch_size, action_dim)
+        log_probs = action_distribution.log_prob(action)
+        if log_probs.ndim > 1:
+            log_probs = log_probs.sum(dim=-1)
 
-        # (DONE)TO-DO(student): Compute Q-values for the sampled state-action pair
-        q_values = self.critic(obs, action).squeeze(-1) # (num_critics, batch_size)
-        q_values_mean = torch.mean(q_values, dim=0)  # (batch_size,)
+        # SAC objective
+        loss = torch.mean(self.temperature * log_probs - q_values)
 
-        # (DONE)TO-DO(student): Compute the actor loss using Q-values
-        # J_pi(phi) = E_s,a ~ pi [ min_k Q_k(s, a) - alpha * log(pi(a|s)) ]
-        log_probs = action_distribution.log_prob(action).sum(dim=-1)  # (batch_size,)
-
-        # Loss: Negative of the objective function (since we are minimizing loss)
-        if self.num_critic_networks > 1:
-            q_values_for_loss = torch.min(q_values, dim=0).values  # Use min Q for stability
-        else:
-            q_values_for_loss = q_values.squeeze(0)  # Use the single Q value
-
-        loss = -torch.mean(q_values_for_loss - self.temperature * log_probs)
-
-        return loss, torch.mean(self.entropy(action_distribution))
+        entropy = self.entropy(action_distribution).mean()
+        return loss, entropy
 
     def update_actor(self, obs: torch.Tensor):
         """
