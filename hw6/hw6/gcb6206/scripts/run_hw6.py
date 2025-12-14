@@ -32,9 +32,9 @@ register_envs()
 
 # Sets MUJOCO_GL depending on platform
 if "MUJOCO_GL" not in os.environ:
-    if platform.system() == 'Darwin':  # macOS
+    if platform.system() == 'Darwin' or platform.system() == 'Windows':  # Windows 조건 추가
         os.environ["MUJOCO_GL"] = 'glfw'
-    else:  # Linux or other OS
+    else:  # Linux
         os.environ["MUJOCO_GL"] = 'egl'
 
 def run_training_loop(
@@ -82,12 +82,20 @@ def run_training_loop(
         # collect data
         print("Collecting data...")
         if itr == 0:
-            # TODO(student): collect at least config["initial_batch_size"] transitions with a random policy
+            # TO_DO(Done): collect at least config["initial_batch_size"] transitions with a random policy
             # HINT: Use `random_policy` and `utils.sample_trajectories`
-            trajs, envsteps_this_batch = ...
+            trajs, envsteps_this_batch = utils.sample_trajectories(
+                env,
+                random_policy,
+                min_timesteps_per_batch=config["initial_batch_size"]
+            )
         else:
-            # TODO(student): collect at least config["batch_size"] transitions with our `actor_agent`
-            trajs, envsteps_this_batch = ...
+            # TO_DO(Done): collect at least config["batch_size"] transitions with our `actor_agent`
+            trajs, envsteps_this_batch = utils.sample_trajectories(
+                env,
+                actor_agent,
+                min_timesteps_per_batch=config["batch_size"]
+            )
 
         total_envsteps += envsteps_this_batch
         logger.log_scalar(total_envsteps, "total_envsteps", itr)
@@ -116,11 +124,19 @@ def run_training_loop(
             config["num_agent_train_steps_per_iter"], dynamic_ncols=True
         ):
             step_losses = []
-            # TODO(student): train the dynamics models
+            # TO_DO(Done): train the dynamics models
             # HINT: train each dynamics model in the ensemble with a *different* batch of transitions using mb_agent.model_loss()
             # You may use for loop with size of `mb_agent.ensemble_size`
             # Use `replay_buffer.sample` with config["train_batch_size"].
-            step_losses = ...
+            for i in range(mb_agent.ensemble_size):
+                r_batch = replay_buffer.sample(config["train_batch_size"])
+                loss = mb_agent.get_loss(
+                    i,
+                    r_batch["observations"],
+                    r_batch["actions"],
+                    r_batch["next_observations"]
+                )
+                step_losses.append(loss)
             
             all_losses.append(np.mean(step_losses))
 

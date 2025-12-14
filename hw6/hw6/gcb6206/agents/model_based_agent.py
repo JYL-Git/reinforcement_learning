@@ -83,7 +83,7 @@ class ModelBasedAgent(nn.Module):
         acs = ptu.from_numpy(acs)
         next_obs = ptu.from_numpy(next_obs)
 
-        # TODO(student): update self.dynamics_models[i] using the given batch of data
+        # TO_DO(Done): update self.dynamics_models[i] using the given batch of data
         # HINT: use self.dynamics_models[i] to get the normalized delta prediction for next observation.
         # Note that the model recieves **normalized** observation-action for its input.
         # Optimize the model with meaned-squared loss: torch.nn.MSELoss() .
@@ -92,8 +92,8 @@ class ModelBasedAgent(nn.Module):
         obs_acs_normalized = (obs_acs - self.obs_acs_mean) / self.obs_acs_std
 
         obs_delta_normalized = (obs_delta - self.obs_delta_mean) / self.obs_delta_std
-        obs_delta_normalized_hat = ...
-        loss = ... 
+        obs_delta_normalized_hat = self.dynamics_models[i](obs_acs_normalized)
+        loss = self.loss_fn(obs_delta_normalized_hat, obs_delta_normalized)
 
         self.optimizer.zero_grad()
         loss.backward()
@@ -138,11 +138,11 @@ class ModelBasedAgent(nn.Module):
         obs = ptu.from_numpy(obs)
         acs = ptu.from_numpy(acs)
 
-        # TODO(student): get the model's predicted `next_obs`
+        # TO_DO(Done): get the model's predicted `next_obs`
         # HINT: use self.dynamics_models[i] to get the delta prediction for next obs.
         obs_acs = torch.concat([obs, acs], axis=-1)
         obs_acs_normalized = (obs_acs - self.obs_acs_mean) / self.obs_acs_std 
-        obs_delta_normalized = ...
+        obs_delta_normalized = self.dynamics_models[i](obs_acs_normalized)
 
         obs_delta = obs_delta_normalized * self.obs_delta_std + self.obs_delta_mean
         pred_next_obs = obs + obs_delta
@@ -170,7 +170,7 @@ class ModelBasedAgent(nn.Module):
         # We need to repeat our starting obs for each of the rollouts.
         obs = np.tile(obs, (self.ensemble_size, self.mpc_num_action_sequences, 1))
 
-        # TODO(student): for each batch of actions in in the horizon...
+        # TO_DO(Done): for each batch of actions in in the horizon...
         for step in range(action_sequences.shape[1]):
             acs = action_sequences[:, step, :]
             assert acs.shape == (self.mpc_num_action_sequences, self.ac_dim)
@@ -180,9 +180,15 @@ class ModelBasedAgent(nn.Module):
                 self.ob_dim,
             )
 
-            # TODO(student): predict the next_obs for each rollout
+            # TO_DO(Done): predict the next_obs for each rollout
             # HINT: use self.get_dynamics_predictions
-            #next_obs = ...
+            next_obs = []
+            for i in range(self.ensemble_size):
+                # Predict for the i-th model using the i-th set of observations
+                pred = self.get_dynamics_predictions(i, obs[i], acs)
+                next_obs.append(pred)
+            next_obs = np.stack(next_obs)
+
             assert next_obs.shape == (
                 self.ensemble_size,
                 self.mpc_num_action_sequences,
@@ -224,12 +230,25 @@ class ModelBasedAgent(nn.Module):
             return action_sequences[best_index][0]
         elif self.mpc_strategy == "cem":
             for i in range(self.cem_num_iters):
-                # TODO(student): implement the CEM algorithm
+                # TO_DO(Done): implement the CEM algorithm
                 # HINT 1: Use self.evaluate_action_sequences for evaluating the action sequence.
                 # HINT 2: For getting the top-k indices, you can use np.argpartition function. 
                 # HINT 3: Generate action sequence with the mean and standard deviation of the elite sequences.
                 # Note that we use diagnoal gaussian distribution, not with full covariance.
-                action_sequences = ...
+                rewards = self.evaluate_action_sequences(obs, action_sequences)
+
+                # Select elites with highest rewards
+                elite_idxs = np.argpartition(rewards, -self.cem_num_elites)[-self.cem_num_elites:]
+                elites = action_sequences[elite_idxs]
+
+                # Fit Gaussian (mean and std)
+                mean = np.mean(elites, axis=0)
+                std = np.std(elites, axis=0)
+
+                # Resample action sequences
+                action_sequences = np.random.normal(
+                    mean, std, size=(self.mpc_num_action_sequences, self.mpc_horizon, self.ac_dim)
+                )
                 
                 action_sequences = np.clip(action_sequences, self.env.action_space.low, self.env.action_space.high)
 
